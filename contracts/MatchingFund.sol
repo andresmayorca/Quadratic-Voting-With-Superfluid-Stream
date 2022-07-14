@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
-contract fund{
+import "hardhat/console.log";
+
+// openzeppelin libreries 
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
+contract MatchingFund{
 
     struct request {
         string description;
@@ -10,17 +17,18 @@ contract fund{
         bool complete;
     }
 
-    address public manager;
+    address public owner;
     uint public MinimumContribution;
     address[] public approvals;
 
     function compaing(uint minimum) public {
-        manager = msg.sender;
+        owner = msg.sender;
         MinimumContribution = minimum;
     }                         
 
     function contribute() public payable{
         require(msg.value > MinimumContribution);
         approvals.push(msg.sender);
+        console.log("funds sent successfully!");
     }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
 } 
