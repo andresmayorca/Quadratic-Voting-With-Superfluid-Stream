@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
-import "hardhat/console.log";
+import "hardhat/console.sol";
 
 // openzeppelin libreries 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
