@@ -3,6 +3,8 @@ pragma solidity ^0.8.9;
 
 import "hardhat/console.sol";
 
+import "./QuadraticVoting.sol";
+
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -15,8 +17,9 @@ import {IConstantFlowAgreementV1} from "@superfluid-finance/ethereum-contracts/c
 
 import {CFAv1Library} from "@superfluid-finance/ethereum-contracts/contracts/apps/CFAv1Library.sol";
 
-contract MoneyRouter {
-    address public owner;
+import "./QuadraticVoting.sol";
+
+contract MoneyRouter is QuadraticVoting{
 
     using CFAv1Library for CFAv1Library.InitData;
     CFAv1Library.InitData public cfaV1; //initialize cfaV1 variable
@@ -41,17 +44,12 @@ contract MoneyRouter {
         );
     }
 
-    function whitelistAccount(address _account) external {
-        require(msg.sender == owner, "only owner can whitelist accounts");
-        accountList[_account] = true;
-    }
-
     function removeAccount(address _account) external {
         require(msg.sender == owner, "only owner can remove accounts");
         accountList[_account] = false;
     }
 
-    function changeOwner(address _newOwner) external {
+    function changeOwner(address _newOwner) public {
         require(msg.sender == owner, "only owner can change ownership");
         owner = _newOwner;
     }
@@ -61,41 +59,16 @@ contract MoneyRouter {
         token.transferFrom(msg.sender, address(this), amount);
     }
 
-    function createFlowIntoContract(ISuperfluidToken token, int96 flowRate) external {
+    function createFlowFromContract(ISuperfluidToken token, address charity, uint totalWeiPaid) external {
+        charity = charity;
+        totalWeiPaid = totalWeiPaid;
         require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-
-        cfaV1.createFlowByOperator(msg.sender, address(this), token, flowRate);
+        cfaV1.createFlow(charity, token, totalWeiPaid);
     }
 
-    function updateFlowIntoContract(ISuperfluidToken token, int96 newFlowRate) external {
+    function deleteFlowFromContract(ISuperfluidToken token, address charity) external {
+        charity = charity;
         require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-
-        cfaV1.updateFlowByOperator(msg.sender, address(this), token, newFlowRate);
-    }
-
-    function deleteFlowIntoContract(ISuperfluidToken token) external {
-        require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-
-        cfaV1.deleteFlow(msg.sender, address(this), token);
-    }
-
-    function withdrawFunds(ISuperToken token, uint amount) external {
-        require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-        token.transfer(msg.sender, amount);
-    }
-
-    function createFlowFromContract(ISuperfluidToken token, address receiver, int96 flowRate) external {
-        require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-        cfaV1.createFlow(receiver, token, flowRate);
-    }
-
-    function updateFlowFromContract(ISuperfluidToken token, address receiver, int96 newFlowRate) external {
-        require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-        cfaV1.updateFlow(receiver, token, newFlowRate);
-    }
-
-    function deleteFlowFromContract(ISuperfluidToken token, address receiver) external {
-        require(msg.sender == owner || accountList[msg.sender] == true, "must be authorized");
-        cfaV1.deleteFlow(address(this), receiver, token);
+        cfaV1.deleteFlow(address(this), charity, token);
     }
 }

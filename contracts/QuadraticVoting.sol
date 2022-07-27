@@ -5,12 +5,13 @@ pragma solidity ^0.8.9;
 import "./SafeMath.sol";
 import "./Owned.sol";
 
+// import {MoneyRouter} from "./SuperfluidStreams.sol";
+
 contract QuadraticVoting is Owned {
 
     using SafeMath256 for uint;
     using SafeMath32 for uint32;
     using SafeMath8 for uint8;
-    
 
     // ==========
     // EVENTS:
@@ -81,6 +82,7 @@ contract QuadraticVoting is Owned {
             to vote (to prevent Sybil attacks using multiple addresses 
             for cheaper votes) */
     }
+
 
     struct Vote {
         uint32 numVotes;        // Number of votes purchased / committed
