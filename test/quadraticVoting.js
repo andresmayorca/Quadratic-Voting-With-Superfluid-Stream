@@ -1,5 +1,8 @@
-const QuadraticVoting = artifacts.require("../contracts/QuadraticVoting");
+const { Artifacts } = require('hardhat/types/artifacts');
+
+const QuadraticVoting = artifacts("../artifacts/contracts/QuadraticVoting");
 const assert = require('assert');
+const { artifacts } = require('hardhat');
 const web3Utils = require('web3-utils');
 const { advanceBlock } = require('./helpers/advanceToBlock');
 const { expectThrow } = require('./helpers/expectThrow');

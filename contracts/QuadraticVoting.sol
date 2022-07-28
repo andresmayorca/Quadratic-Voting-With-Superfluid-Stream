@@ -1,17 +1,25 @@
 //SPDX-License-Identifier: Unlicense
-pragma solidity ^0.8.9;
-
+pragma solidity ^0.8.14;
 
 import "./SafeMath.sol";
 import "./Owned.sol";
 
-// import {MoneyRouter} from "./SuperfluidStreams.sol";
 
+/**
+@title QuadraticVoting
+@dev Allows users to create elections and purchase votes in ETH with
+votes priced based on a quadratic voting mechanism 
+(total cost = (# of votes) ** 2). Implemented using commit/reveal system.
+*/
 contract QuadraticVoting is Owned {
+
+    address public charity;
+    uint public totalWeiPaid;
 
     using SafeMath256 for uint;
     using SafeMath32 for uint32;
     using SafeMath8 for uint8;
+    
 
     // ==========
     // EVENTS:
@@ -83,9 +91,13 @@ contract QuadraticVoting is Owned {
             for cheaper votes) */
     }
 
-
     struct Vote {
         uint32 numVotes;        // Number of votes purchased / committed
+         /* Commitment hash consisting of pollId, number of votes, 
+         vote (vote is a uint that represents the key in the candidates 
+         mapping corresponding to the candidate voted for), and salt.
+         Note that salt should be kept secret, and a new salt should be 
+         used each time. */
         bytes32 commitment;
     }
 
@@ -105,6 +117,13 @@ contract QuadraticVoting is Owned {
     // ==========
     // MODIFIERS:
     // ==========
+
+    /** 
+    @dev Requires msg.sender to be the poll's admin. Much of the poll
+    functionality is currently limited to the poll admin, but this 
+    should be modified in situations where the poll admin's influence 
+    needs to be limited.
+    */
     modifier onlyAdmin(uint _pollId) { 
         require (
             polls[_pollId].admin == msg.sender,
@@ -122,7 +141,7 @@ contract QuadraticVoting is Owned {
         Phase, change to Commit Phase */
         if (
             polls[_pollId].status == PollStatus.created && 
-            block.timestamp >= polls[_pollId].startTime
+            block.timestamp>= polls[_pollId].startTime
         ) 
         {
             polls[_pollId].status = PollStatus.commitPhase;
@@ -134,13 +153,14 @@ contract QuadraticVoting is Owned {
             _;
         }
     }
+    
 
     modifier createdOrCommitPhase(uint _pollId) {
         /* If it is past poll start time, but poll is still in Created 
         Phase, change to Commit Phase */
         if (
             polls[_pollId].status == PollStatus.created && 
-            block.timestamp >= polls[_pollId].startTime
+            block.timestamp>= polls[_pollId].startTime
         ) 
         {
             polls[_pollId].status = PollStatus.commitPhase;
@@ -149,7 +169,7 @@ contract QuadraticVoting is Owned {
         Phase, change to Reveal Phase */
         if (
             polls[_pollId].status == PollStatus.commitPhase &&
-            block.timestamp >= polls[_pollId].closeTime
+            block.timestamp>= polls[_pollId].closeTime
         )
         {
             polls[_pollId].status = PollStatus.revealPhase;
@@ -169,7 +189,7 @@ contract QuadraticVoting is Owned {
         Phase, change to Commit Phase */
         if (
             polls[_pollId].status == PollStatus.created && 
-            block.timestamp >= polls[_pollId].startTime
+            block.timestamp>= polls[_pollId].startTime
         ) 
         {
             polls[_pollId].status = PollStatus.commitPhase;
@@ -178,7 +198,7 @@ contract QuadraticVoting is Owned {
         Phase, change to Reveal Phase */
         if (
             polls[_pollId].status == PollStatus.commitPhase &&
-            block.timestamp >= polls[_pollId].closeTime
+            block.timestamp>= polls[_pollId].closeTime
         )
         {
             polls[_pollId].status = PollStatus.revealPhase;
@@ -197,7 +217,7 @@ contract QuadraticVoting is Owned {
         Phase, change to Reveal Phase */
         if (
             polls[_pollId].status == PollStatus.commitPhase &&
-            block.timestamp >= polls[_pollId].closeTime
+            block.timestamp>= polls[_pollId].closeTime
         )
         {
             polls[_pollId].status = PollStatus.revealPhase;
@@ -207,7 +227,7 @@ contract QuadraticVoting is Owned {
         the reveal phase the same amount of time as the commitment phase. */
         if (
             polls[_pollId].status == PollStatus.revealPhase &&
-            block.timestamp >= polls[_pollId].closeTime + 
+            block.timestamp>= polls[_pollId].closeTime + 
             (polls[_pollId].closeTime - polls[_pollId].startTime)
         )
         {
@@ -229,7 +249,7 @@ contract QuadraticVoting is Owned {
         gives the reveal phase the same amount of time as the commitment 
         phase. */
         if (
-            block.timestamp >= polls[_pollId].closeTime + 
+            block.timestamp>= polls[_pollId].closeTime + 
             (polls[_pollId].closeTime - polls[_pollId].startTime)
         )
         {
@@ -255,7 +275,15 @@ contract QuadraticVoting is Owned {
     // POLLING INTERFACE:
     // ==========
 
-
+    /**
+    @dev Creates a poll, with msg.sender becoming the poll admin
+    @param _startTime The earliest time poll can be changed to commitPhase
+    @param _closeTime The earliest time poll can be changed to revealPhase
+    @param _firstVoteCost Cost of the first vote (in Wei). The cost of each 
+            additional vote squares quadratically based on firstVoteCost.
+            Cost of Votes = (# of votes)**2 * firstVoteCost
+    @param _description Short (32 bytes) description of poll
+    */
     function makePoll(
         uint32 _startTime, 
         uint32 _closeTime, 
@@ -271,7 +299,7 @@ contract QuadraticVoting is Owned {
         want to schedule any polls that start 10 years before present) 
         */
         require (
-            _closeTime > _startTime && _startTime >= block.timestamp - 1000,
+            _closeTime > _startTime && _startTime >= block.timestamp- 1000,
             "Poll must start after the present time and close after start time."
         );
         require(_firstVoteCost >= 1, "First vote cost must be greater than 1 Wei");
@@ -290,6 +318,17 @@ contract QuadraticVoting is Owned {
         return pollCount;
     }
 
+    /**
+    @dev Adds a candidate to a poll. Note that it would be preferable
+    in some situations to require candidates to be added only during the
+    Created phase to guarantee every voter could see all candidates 
+    before committing their vote. However, currently candidates can be 
+    added during both the Created and Commit phases to allow more 
+    flexibility in informal polls that start immediately after creation.
+    @param _pollId Id of the poll to add candidate to. msg.sender must
+            be the admin of this poll
+    @param _name Candidate name, short description of option, etc.
+     */
     function addCandidate(uint _pollId, bytes32 _name) 
         public 
         onlyAdmin(_pollId)
@@ -305,6 +344,15 @@ contract QuadraticVoting is Owned {
         polls[_pollId].candidateCount = newCandidateCount;
     }
 
+    /**
+    @dev Adds a voter to the approved voter's list. Approved voters are
+    necessary to prevent a sybil attack using many addresses to place
+    votes at firstVoteCost. See ReadMe for discussion of other possible
+    implementations to prevent sybil attack
+    @param _pollId Id of the poll to add approved voter for. msg.sender
+            must be the admin of this poll.
+    @param _voter Address of the vote to add to approvedVoters
+     */
     function approveVoter(uint _pollId, address _voter) 
         public 
         stopInEmergency
@@ -323,7 +371,12 @@ contract QuadraticVoting is Owned {
         return true;
     }
 
- 
+    /**
+    @dev Changes administrative privileges to a poll. msg.sender must be
+    the current admin of the poll.
+    @param _pollId Id of the poll to change admin for
+    @param _newAdmin Address of the new admin
+     */
     function transferAdmin(uint _pollId, address _newAdmin) 
         public 
         stopInEmergency
@@ -342,7 +395,13 @@ contract QuadraticVoting is Owned {
         return polls[_pollId].admin;
     }
 
-    
+    /**
+    @dev Remove a voter from the approved list. Can not be used once reveal
+    phase has started or after voter has already committed vote, as voter
+    would lose committed funds.
+    @param _pollId Id of the poll. msg.sender must be the admin of this poll.
+    @param _voter Address of the vote to remove from approvedVoters
+    */
     function removeApprovedVoter(uint _pollId, address _voter) 
         public 
         stopInEmergency
@@ -360,6 +419,14 @@ contract QuadraticVoting is Owned {
         return true;
     }
 
+    /**
+    @dev Change poll into reveal phase (if not already) and return the
+    result of the poll (uint returned represents the key of the winner
+    in the candidates mapping). NOTE: In the event of a tie, in order to
+    avoid returning 255 "winning" candidates, 0 is returned, and the user
+    or front-end should check each candidate's voteCount manually
+    @param _pollId Id of the poll to complete. msg.sender must be admin
+    */
     function completePoll(uint _pollId) public completePhase(_pollId) returns (uint) {
         uint topChoice;
         uint donationAmount = polls[_pollId].totalWeiPaid - polls[_pollId].totalWeiRefunded;
@@ -372,7 +439,6 @@ contract QuadraticVoting is Owned {
             )
             {
                 emit PollCompleted(_pollId, 0, donationAmount);
-                polls[_pollId].charity.transfer(donationAmount);
                 return 0;
             }
             if 
@@ -385,7 +451,6 @@ contract QuadraticVoting is Owned {
             }
         }
         emit PollCompleted(_pollId, topChoice, donationAmount);
-        polls[_pollId].charity.transfer(donationAmount);
         return topChoice;
     }
 
@@ -394,6 +459,19 @@ contract QuadraticVoting is Owned {
     // VOTING INTERFACE:
     // ==========
 
+    /**
+    @dev Commit votes. Allows users to vote anytime during the commitment
+    phase without influencing the poll outcome by allowing others to see
+    the current votes before committing.
+    @param _pollId Id of the poll to vote in. Must be an approved voter.
+    @param commitment Commitment hash consisting of pollId, number of votes, 
+         vote (index of chosen candidate in the voterCount array), and salt.
+         Note that salt should be kept secret, and a new salt should be 
+         used each time.
+    @param _numVotes number of votes committed. This is revealed during
+        the commit phase to calculate cost of the vote commit, and to 
+        provide the proper refund to voters who reveal their votes.
+     */
     function commitVote(uint _pollId, bytes32 commitment, uint32 _numVotes) 
         public 
         payable 
@@ -402,6 +480,9 @@ contract QuadraticVoting is Owned {
         commitPhase(_pollId) 
         returns (bool) 
     {
+        /* Can submit fractions of votes, but must submit at least one 
+        vote, because voteRevealerRefund will return at least the cost 
+        of one vote */
         require (_numVotes >= 1, "Must submit at least one vote.");
 
         /* Can vote only one time per election (but can cast multiple 
@@ -428,7 +509,17 @@ contract QuadraticVoting is Owned {
         return true;
     }
 
-    
+    /**
+    @dev Reveal votes.
+    @param _pollId Id of the poll to reveal votes in. Must be an approved voter.
+    @param _vote The same vote that was originally submitted within the 
+        commitment hash, where the vote is a uint corresponding to the 
+        candidateId (the key for the candidate in the candidates mapping)
+    @param _salt The salt used in the commitment hash.
+        keccak256(pollId, numVote, vote, salt) must match the commitment
+        hash for vote to be counted. Since salt is revealed, a new salt
+        should be used each time an address votes in a poll
+     */
     function revealVote(uint _pollId, uint _vote, bytes32 _salt) 
         public 
         stopInEmergency
@@ -452,6 +543,10 @@ contract QuadraticVoting is Owned {
             "Hash does not match the committed hash."
         );
 
+        /* Delete the original vote to reduce gas costs and prevent the 
+        same commitment from being revealed multiple times. User's are
+        still prevented from committing more votes by poll phase 
+        restrictions */
         delete votes[msg.sender][_pollId];
 
         /* Count votes. Tally numVotes to the voteCount of the selected
@@ -464,14 +559,20 @@ contract QuadraticVoting is Owned {
         _voteCount = _voteCount.add(numVotes);
         polls[_pollId].candidates[_vote].voteCount = uint32(_voteCount);
 
+        /* Calculate the voter refund and add the refund to totalWeiRefunded 
+        Refund = (totalWeiPaid / totalVotesCommitted) * numberOfVotesCommitted 
+        Note: currently there is no adjustment for the lack of precision 
+        in integer division in Solidity (answers are always rounded down to
+        the nearest integer). This can result in the voteRevealerRefund
+        being slightly lower than it otherwise should be. */
         uint voteRevealerRefund = (polls[_pollId].totalWeiPaid).div(polls[_pollId].totalVotesCommitted);
         uint totalReturned = polls[_pollId].totalWeiRefunded;
         totalReturned = totalReturned.add(voteRevealerRefund * numVotes);
         polls[_pollId].totalWeiRefunded = totalReturned;
 
         // Refund the voter for revealing their vote
-        msg.sender.transfer(voteRevealerRefund * numVotes);
-        return voteRevealerRefund;
+        //msg.sender.send(voteRevealerRefund * numVotes);
+        // return voteRevealerRefund;
     }
 
 
@@ -483,6 +584,11 @@ contract QuadraticVoting is Owned {
         return polls[_pollId].status;
     }
 
+    /**
+    @dev Returns all info for the poll struct. Not the most readable,
+    but currently the best way to return a struct in a public function.
+    @param _pollId Id of the poll to return info for
+     */
     function getPollInfo(uint _pollId) public view returns 
     (
         uint totalWeiPaid,
@@ -539,14 +645,21 @@ contract QuadraticVoting is Owned {
         stopped = !stopped;
     }
 
-    function sweepBalance() public onlyOwner {
-        owner.transfer(address(this).balance);
-    }
-    
-    function kill() public onlyOwner {
-        selfdestruct(owner);
-    }
-
+    /**
+    @dev Allows voters who have already committed votes to withdraw their
+    refund in the event of an issue that requires the contract to be
+    stopped. Does not tally any votes, but requires the voter's committed
+    vote information for security.
+    @param _pollId Id of the poll to claim refund from. Must be an 
+    approved voter.
+    @param _vote The same vote that was originally submitted within the 
+        commitment hash, where the vote is a uint corresponding to the 
+        candidateId (the key for the candidate in the candidates mapping)
+    @param _salt The salt used in the commitment hash.
+        keccak256(pollId, numVote, vote, salt) must match the commitment
+        hash for vote to be counted. Since salt is revealed, a new salt
+        should be used each time an address votes in a poll
+     */
     function withdraw(uint _pollId, uint _vote, bytes32 _salt)
         public
         onlyApprovedVoters(_pollId)
@@ -570,22 +683,40 @@ contract QuadraticVoting is Owned {
             "Hash does not match the committed hash."
         );
 
+        /* Delete the original vote to reduce gas costs and prevent the 
+        same commitment from being claimed for a refund or revealed in
+        the future */
         delete votes[msg.sender][_pollId];
 
-       uint voteRevealerRefund = (polls[_pollId].totalWeiPaid).div(polls[_pollId].totalVotesCommitted);
+        /* Calculate the voter refund and add the refund to totalWeiRefunded 
+        Refund = (totalWeiPaid / totalVotesCommitted) * numberOfVotesCommitted 
+        Note: currently there is no adjustment for the lack of precision 
+        in integer division in Solidity (answers are always rounded down to
+        the nearest integer). This can result in the voteRevealerRefund
+        being slightly lower than it otherwise should be. */
+        uint voteRevealerRefund = (polls[_pollId].totalWeiPaid).div(polls[_pollId].totalVotesCommitted);
         uint totalReturned = polls[_pollId].totalWeiRefunded;
         totalReturned = totalReturned.add(voteRevealerRefund * numVotes);
         polls[_pollId].totalWeiRefunded = totalReturned;
 
         // Refund the voter for revealing their vote
-        msg.sender.transfer(voteRevealerRefund * numVotes);
+        // msg.sender.transfer(voteRevealerRefund * numVotes);
         return voteRevealerRefund;
     }
 
     ////
 
+    /** IMPORTANT: Hashing your vote on the blockchain is extremely
+    insecure and completely defeats the purpose of a commit-reveal
+    system, as everyone can see the vote you hashed. This function is 
+    included here for development to give anyone testing the contract
+    an easy way to confirm that their locally-created hash matches
+    the on-chain keccak256 used in the revealVote() function. */
     function hash(uint _pollId, uint _numVotes, uint _vote, bytes32 salt) 
         public view returns (bytes32) {
+            /* For testing purposes, check that commitment vote is within
+            the number of candidates in the poll to prevent confusion 
+            from committing an invalid vote */ 
         require (
             _vote <= polls[_pollId].candidateCount,
             "Vote must be placed for a valid candidate."
