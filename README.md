@@ -22,4 +22,18 @@ The quadratic function does not look at how much money was contributed to the pr
 
 After we distribute the funds, the corresponding funds will be transferred to each project in the superfuild stream.
 
-`CREATE_NEW_RESOLVER=1` forces the script to deploy a new resolver even if there's one already deployed (this is the case on Ethereum testnets). That's useful because otherwise the script would try to use the pre-existing resolver and have failing transactions due to lacking permissions.
+## Functions
+
+Some of the features we use in this contract are:
+
+`makePoll` create a new poll, we can see the variables that a poll has in the `Poll` structure.
+
+`addCandidate` Add candidate to the polls.
+
+`approveVoter` Adds a voter to the list of approved voters.
+
+`transferAdmin` Change the administrative privileges of a survey.
+
+`removedApprovedVoter` Remove a voter from the approved list.
+
+`completePoll` changes the poll to the reveal phase and returns the result of the poll.
